@@ -41,18 +41,35 @@ consumers (`1`), then Gateway API routes (`2`).
 ## Prerequisites before the first sync
 
 1. **A Git remote Argo CD can reach.** The manifests point at
-   `https://github.com/adlisamy/homelab.git`, branch `main`. If the repository
-   ever moves, change it in `root-app.yaml` and under `apps/`:
+   `git@github.com:adlisamy/homelab.git` (SSH), branch `main`. If the repo
+   moves, change it in `root-app.yaml` and under `apps/`:
 
    ```sh
-   REPO_URL=https://github.com/<org>/<repo>.git
-   grep -rl 'adlisamy/homelab' platform/gitops | xargs sed -i "s#https://github.com/adlisamy/homelab.git#${REPO_URL}#"
+   REPO_URL=git@github.com:<org>/<repo>.git
+   grep -rl 'adlisamy/homelab' platform/gitops | xargs sed -i "s#git@github.com:adlisamy/homelab.git#${REPO_URL}#"
    ```
 
-   A private remote also needs an Argo CD repository credential (a `repo`
-   Secret in the `argocd` namespace) or a credential template.
+2. **Repository credential.** The repository is private, so Argo CD
+   authenticates with an SSH deploy key:
 
-2. **The commit pushed to that branch.** Argo CD reads `targetRevision: main`,
+   - the public half of `~/.ssh/argocd_homelab_deploy.pub` is added to the
+     repository as a **read-only deploy key**;
+   - the private half lives in the `repo-homelab` Secret in the `argocd`
+     namespace, labelled `argocd.argoproj.io/secret-type=repository`:
+
+     ```sh
+     kubectl -n argocd create secret generic repo-homelab \
+       --from-literal=type=git \
+       --from-literal=url=git@github.com:adlisamy/homelab.git \
+       --from-file=sshPrivateKey=$HOME/.ssh/argocd_homelab_deploy
+     kubectl -n argocd label secret repo-homelab argocd.argoproj.io/secret-type=repository
+     ```
+
+   The private key is never committed (it lives outside the repository), and
+   `ssh_known_hosts` is unnecessary because Argo CD's repo-server already
+   bundles GitHub's host keys.
+
+3. **The commit pushed to that branch.** Argo CD reads `targetRevision: main`,
    so the manifests above must exist on `main`.
 
 ## Bootstrap

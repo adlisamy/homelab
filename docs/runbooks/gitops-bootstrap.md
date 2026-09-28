@@ -41,10 +41,12 @@ Two constraints drive the order:
 - **Argo CD must already be able to reach the repository** before the addon is
   removed, otherwise ingress stays down.
 
-1. The repository is published at `https://github.com/adlisamy/homelab.git`
-   (branch `main`). If it moves, update the `repoURL` in `root-app.yaml` and
-   under `platform/gitops/apps/`. For a private remote, create the Argo CD
-   repository credential (see `platform/gitops/README.md`).
+1. The repository is published at `git@github.com:adlisamy/homelab.git`
+   (branch `main`) and is **private**, so Argo CD authenticates with an SSH
+   deploy key: add `~/.ssh/argocd_homelab_deploy.pub` as a read-only deploy key
+   on the repository, and keep the private key in the `repo-homelab` Secret in
+   the `argocd` namespace (see `platform/gitops/README.md`). If the repo moves,
+   update the `repoURL` in `root-app.yaml` and under `platform/gitops/apps/`.
 
 2. **Maintenance window.** Run the Ansible k3s playbook so the
    `disable: traefik` setting in

@@ -18,7 +18,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/adlisamy/homelab.git
+    repoURL: git@github.com:adlisamy/homelab.git
     targetRevision: main
     path: apps/gateways
     directory:
