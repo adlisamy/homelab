@@ -40,21 +40,20 @@ consumers (`1`), then Gateway API routes (`2`).
 
 ## Prerequisites before the first sync
 
-1. **A Git remote Argo CD can reach.** This working copy is not a Git
-   repository yet, so every `repoURL` is the placeholder
-   `https://github.com/CHANGE-ME/homelab.git`. Replace it in
-   `root-app.yaml` and in all files under `apps/`:
+1. **A Git remote Argo CD can reach.** The manifests point at
+   `https://github.com/adlisamy/homelab.git`, branch `main`. If the repository
+   ever moves, change it in `root-app.yaml` and under `apps/`:
 
    ```sh
    REPO_URL=https://github.com/<org>/<repo>.git
-   grep -rl 'CHANGE-ME/homelab' platform/gitops | xargs sed -i "s#https://github.com/CHANGE-ME/homelab.git#${REPO_URL}#"
+   grep -rl 'adlisamy/homelab' platform/gitops | xargs sed -i "s#https://github.com/adlisamy/homelab.git#${REPO_URL}#"
    ```
 
    A private remote also needs an Argo CD repository credential (a `repo`
    Secret in the `argocd` namespace) or a credential template.
 
-2. **The placeholder commit pushed.** Argo CD reads `targetRevision: main` by
-   default, so the manifests above must exist on that branch.
+2. **The commit pushed to that branch.** Argo CD reads `targetRevision: main`,
+   so the manifests above must exist on `main`.
 
 ## Bootstrap
 

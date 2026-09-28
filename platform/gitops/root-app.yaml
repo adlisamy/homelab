@@ -10,10 +10,8 @@
 # Bootstrap once, from a host with cluster-admin access:
 #   kubectl apply -f platform/gitops/root-app.yaml
 #
-# PREREQUISITE: replace the repoURL below, and in every file under
-# platform/gitops/apps/, with a Git remote Argo CD can reach. The value is a
-# placeholder because this working copy is not a Git repository yet.
-# See platform/gitops/README.md.
+# The repoURL below must be a Git remote Argo CD can reach, on the branch named
+# by targetRevision. See platform/gitops/README.md.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -26,7 +24,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/CHANGE-ME/homelab.git
+    repoURL: https://github.com/adlisamy/homelab.git
     targetRevision: main
     path: platform/gitops/apps
     directory:
