@@ -1,0 +1,18 @@
+# Terraform state and provider cache must never be committed: state can contain
+# sensitive values, and the provider cache is ~43 MB of binaries.
+# (.terraform.lock.hcl is intentionally NOT ignored - the provider lock file is
+# meant to be committed.)
+.terraform/
+*.tfstate
+*.tfstate.*
+
+# Local VM disk image (~494 MB), recreated by terraform apply.
+*.qcow2
+
+# Per-user editor / tooling configuration.
+.idx/
+.vscode/mcp.json
+.mcp.json
+
+# Argo CD-generated working files, if ever used locally.
+*.rendered.yaml

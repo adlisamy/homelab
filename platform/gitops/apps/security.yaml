@@ -1,0 +1,36 @@
+---
+# TLS configuration consumed by cert-manager (the operator itself is
+# installed by platform/gitops/apps/cert-manager.yaml).
+#
+# sync-wave 1: runs after the cert-manager CRDs exist. Dry-run is skipped
+# because the ClusterIssuer kind is not known to the API server until then.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: platform-security
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: platform
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/CHANGE-ME/homelab.git
+    targetRevision: main
+    path: platform/security
+    directory:
+      recurse: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: cert-manager
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - SkipDryRunOnMissingResource=true
+      - ApplyOutOfSyncOnly=true

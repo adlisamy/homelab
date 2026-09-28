@@ -1,0 +1,20 @@
+{
+    "chat.mcp.serverSampling": {
+        "homelab/.vscode/mcp.json: Perplexity": {
+            "allowedModels": [
+                "copilotcli/auto",
+                "copilot/auto"
+            ]
+        }
+    },
+    "yaml.disableSchemaDetection": [
+        "file:///home/sam/homelab/infra/terraform/cloudinit/network-config.yaml",
+        "file:///home/sam/homelab/infra/terraform/cloudinit/user-data.yaml"
+    ],
+    "yaml.schemas": {
+        "kubernetes": "*.yaml",
+        "https://raw.githubusercontent.com/ansible/ansible-lint/main/src/ansiblelint/schemas/inventory.json": "file:///home/sam/homelab/infra/ansible/inventory/lab/hosts.yaml"
+    },
+    "python-envs.defaultEnvManager": "ms-python.python:system",
+    "CodeGPT.apiKey": "CodeGPT Plus Beta"
+}

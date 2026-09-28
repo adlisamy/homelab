@@ -1,0 +1,108 @@
+# Platform GitOps
+
+This directory is the hand-off point between imperative bootstrap and
+continuous reconciliation.
+
+- Ansible (and k3s) stop at the cluster runtime and the one-time Argo CD
+  install. See `infra/ansible/playbooks/platform-bootstrap.yaml` and
+  `infra/ansible/roles/argocd_bootstrap/tasks/main.yaml`.
+- Everything after that - CRDs, operators, platform services, application
+  manifests - is reconciled by Argo CD **from Git**, not pushed by Ansible.
+
+## Layout
+
+```
+platform/gitops/
+  root-app.yaml          # app-of-apps root; the only object applied by hand
+  apps/                  # one Argo CD Application per platform area
+    gateway-api.yaml     # Gateway API CRDs (cluster-scoped)
+    cert-manager.yaml    # operator, from the upstream Helm chart
+    traefik.yaml         # ingress + Gateway API controller (Helm chart)
+    security.yaml        # -> platform/security  (ClusterIssuers / TLS)
+    gateways.yaml        # -> apps/gateways      (Gateway / HTTPRoute)
+
+platform/ingress/        # Traefik routing config (TLSOption, Middleware)
+platform/security/       # cert-manager configuration (ClusterIssuer)
+apps/gateways/           # Gateway API objects for applications
+```
+
+The split follows the repository's existing directory intent: Ansible remains
+under `infra/`, in-cluster platform services under `platform/`, and workloads
+under `apps/`.
+
+## Why an app-of-apps
+
+`root-app.yaml` points Argo CD at `platform/gitops/apps/`; each file there is
+an `Application` for one area. Adding a platform service is therefore a Git
+change (a new file plus its manifests), never an Ansible task. `sync-wave`
+annotations order the roll-out: operators first (`0`), then their CRDs'
+consumers (`1`), then Gateway API routes (`2`).
+
+## Prerequisites before the first sync
+
+1. **A Git remote Argo CD can reach.** This working copy is not a Git
+   repository yet, so every `repoURL` is the placeholder
+   `https://github.com/CHANGE-ME/homelab.git`. Replace it in
+   `root-app.yaml` and in all files under `apps/`:
+
+   ```sh
+   REPO_URL=https://github.com/<org>/<repo>.git
+   grep -rl 'CHANGE-ME/homelab' platform/gitops | xargs sed -i "s#https://github.com/CHANGE-ME/homelab.git#${REPO_URL}#"
+   ```
+
+   A private remote also needs an Argo CD repository credential (a `repo`
+   Secret in the `argocd` namespace) or a credential template.
+
+2. **The placeholder commit pushed.** Argo CD reads `targetRevision: main` by
+   default, so the manifests above must exist on that branch.
+
+## Bootstrap
+
+Apply the root application once, from a host with cluster-admin access:
+
+```sh
+kubectl apply -f platform/gitops/root-app.yaml
+```
+
+Argo CD then creates `gateway-api`, `cert-manager`, `traefik`,
+`platform-security` and `platform-gateways` itself, and keeps them in sync.
+
+## Verifying without applying
+
+Every manifest here is a plain Kubernetes object. Validate against the live
+cluster with a server-side dry run:
+
+```sh
+kubectl apply --dry-run=server -f platform/gitops/root-app.yaml
+kubectl apply --dry-run=server -f platform/gitops/apps/
+kubectl apply --dry-run=server -f apps/gateways/
+```
+
+## Ingress controller ownership
+
+Traefik is **not** a k3s addon here. `traefik.yaml` installs the upstream
+chart with Argo CD, and the addon is disabled in
+`infra/ansible/roles/k3s_server/tasks/main.yaml`. Two Helm releases must never
+manage the same ingress resources, so ownership changes hands exactly once and
+the order matters:
+
+1. Publish the repo and confirm the `traefik` Application renders (the k3s
+   addon is still serving traffic at this point).
+2. Apply the Ansible `disable: traefik` change and restart `k3s-server`. k3s
+   uninstalls its `traefik` and `traefik-crd` releases; ingress is down.
+3. Sync the `traefik` Application: it installs the controller, the
+   `IngressClass`/`GatewayClass` named `traefik`, and the CRDs
+   (the chart's `crds/` directory, applied by Argo CD via `--include-crds`).
+
+Do steps 2 and 3 inside a maintenance window - the gap between them is real
+downtime for every Ingress. See `docs/runbooks/gitops-bootstrap.md` for the
+exact commands.
+
+## What is deliberately not here yet
+
+- `platform/observability/`, `platform/storage/`, `platform/rbac/` and
+  `platform/ingress/` are documented platform areas with no manifests yet, so
+  they have no `Application` either (an Application pointing at an empty path
+  fails). Add the directory's manifests and its `Application` together.
+- No Argo CD `ApplicationSet` and no repository credentials: the platform set
+  is small enough that explicit Applications are easier to reason about.

@@ -1,0 +1,23 @@
+---
+# One-time bootstrap of the platform's GitOps controller (Argo CD).
+#
+# This playbook is deliberately kept separate from site.yaml:
+# - site.yaml (bootstrap.yaml + k3s.yaml) prepares nodes and brings the k3s
+#   cluster runtime up. It is safe to re-run on every provisioning cycle.
+# - platform-bootstrap.yaml installs Argo CD, the one piece of cluster
+#   tooling still applied imperatively. After this runs once, all further
+#   CRDs, operators, platform services, and application manifests are
+#   reconciled by Argo CD from this Git repository (see platform/gitops/),
+#   not pushed by Ansible.
+#
+# Run after site.yaml has completed successfully:
+#   ansible-playbook -i inventory/lab playbooks/platform-bootstrap.yaml
+
+- name: Bootstrap the GitOps controller (Argo CD)
+  hosts: k3s_servers
+  become: true
+  gather_facts: false
+  run_once: true
+
+  roles:
+    - role: argocd_bootstrap

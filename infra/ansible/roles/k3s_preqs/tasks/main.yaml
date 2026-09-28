@@ -1,0 +1,8 @@
+- name: Configure shared K3s runtime prerequisites
+  ansible.builtin.import_tasks: runtime.yaml
+
+- name: Apply containerd configuration changes
+  ansible.builtin.meta: flush_handlers
+
+- name: Configure external etcd
+  ansible.builtin.import_tasks: etcd.yaml

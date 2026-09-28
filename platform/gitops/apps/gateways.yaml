@@ -1,0 +1,35 @@
+---
+# Gateway API objects (GatewayClass is provided by the Traefik chart; the
+# Gateway and HTTPRoutes live with the applications in apps/gateways/).
+#
+# sync-wave 2: the GatewayClass and the Gateway API CRDs are reconciled
+# first, so dry-run is skipped while the provider is still coming up.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: platform-gateways
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: platform
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/CHANGE-ME/homelab.git
+    targetRevision: main
+    path: apps/gateways
+    directory:
+      recurse: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - SkipDryRunOnMissingResource=true
+      - ApplyOutOfSyncOnly=true

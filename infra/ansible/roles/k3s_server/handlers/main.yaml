@@ -1,0 +1,6 @@
+- name: Restart k3s-server
+  ansible.builtin.service:
+    name: k3s-server
+    state: restarted 
+    daemon_reload: yes
+

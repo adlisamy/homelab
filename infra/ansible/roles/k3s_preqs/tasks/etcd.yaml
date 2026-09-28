@@ -1,0 +1,72 @@
+---
+- name: Ensure etcd data directory exists
+  ansible.builtin.file:
+    path: /var/lib/etcd
+    state: directory
+    mode: '0700'
+
+- name: Download etcd binary archive
+  ansible.builtin.get_url:
+    url: "https://github.com/etcd-io/etcd/releases/download/{{ etcd_version }}/etcd-{{ etcd_version }}-linux-amd64.tar.gz"
+    dest: "/tmp/etcd-{{ etcd_version }}-linux-amd64.tar.gz"
+    mode: '0644'
+
+- name: Ensure temporary extraction directory exists
+  ansible.builtin.file:
+    path: /tmp/etcd-extracted
+    state: directory
+    mode: '0755'
+
+- name: Extract etcd binary archive
+  ansible.builtin.unarchive:
+    src: "/tmp/etcd-{{ etcd_version }}-linux-amd64.tar.gz"
+    dest: /tmp/etcd-extracted
+    remote_src: true
+
+- name: Copy etcd and etcdctl binaries to system path
+  ansible.builtin.copy:
+    src: "/tmp/etcd-extracted/etcd-{{ etcd_version }}-linux-amd64/{{ item }}"
+    dest: "/usr/local/bin/{{ item }}"
+    mode: '0755'
+    remote_src: true
+  loop:
+    - etcd
+    - etcdctl
+
+- name: Clean up temporary install files
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "/tmp/etcd-{{ etcd_version }}-linux-amd64.tar.gz"
+    - /tmp/etcd-extracted
+
+- name: Create systemd unit file for etcd
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/etcd.service
+    mode: '0644'
+    content: |
+      [Unit]
+      Description=etcd key-value store
+      Documentation=https://github.com
+      After=network.target
+
+      [Service]
+      Type=notify
+      ExecStart=/usr/local/bin/etcd \
+        --name={{ ansible_hostname }} \
+        --data-dir=/var/lib/etcd \
+        --listen-client-urls=http://127.0.0.1:2379,http://{{ ansible_default_ipv4.address }}:2379 \
+        --advertise-client-urls=http://127.0.0.1:2379
+      Restart=always
+      RestartSec=5
+
+      [Install]
+      WantedBy=multi-user.target
+  notify: Restart etcd
+
+- name: Ensure etcd service is enabled and started
+  ansible.builtin.service:
+    name: etcd
+    state: started
+    enabled: true

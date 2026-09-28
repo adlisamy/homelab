@@ -1,0 +1,83 @@
+---
+# One-time installation of Argo CD onto an already-running k3s cluster.
+#
+# This role is intentionally NOT part of site.yaml. Ansible's job stops once
+# the cluster runtime (k3s + CNI) is up; from this point on, everything
+# inside the cluster (CRDs, operators, platform services, apps) is expected
+# to be reconciled by Argo CD from Git, not pushed by Ansible.
+#
+# Re-running this role is safe: kubectl apply is idempotent and changed_when
+# only flags a change when kubectl actually reports created/configured.
+
+- name: Write Argo CD namespace manifest
+  ansible.builtin.copy:
+    dest: /etc/rancher/k3s/argocd-namespace.yaml
+    mode: '0644'
+    content: |
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: "{{ argocd_namespace }}"
+
+- name: Ensure Argo CD namespace exists
+  ansible.builtin.command:
+    cmd: /usr/local/bin/kubectl apply -f /etc/rancher/k3s/argocd-namespace.yaml
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+  register: argocd_bootstrap_namespace_apply
+  changed_when: >-
+    argocd_bootstrap_namespace_apply.stdout_lines |
+    select('search', '(created|configured)$') | list | length > 0
+
+- name: Install Argo CD core manifests (pinned version)
+  ansible.builtin.command:
+    cmd: >-
+      /usr/local/bin/kubectl apply -n {{ argocd_namespace }}
+      --server-side --force-conflicts
+      -f https://raw.githubusercontent.com/argoproj/argo-cd/{{ argocd_version }}/manifests/install.yaml
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+  register: argocd_bootstrap_install_apply
+  changed_when: >-
+    argocd_bootstrap_install_apply.stdout_lines |
+    select('search', '(created|configured|serverside\\-applied)$') | list | length > 0
+  # Client-side "kubectl apply" stores a full last-applied-configuration
+  # annotation, which overflows the 262144-byte annotation limit for the
+  # ApplicationSet CRD. Server-side apply (recommended by the upstream Argo CD
+  # release notes) avoids that annotation entirely.
+
+- name: Wait for the Argo CD server deployment to become available
+  ansible.builtin.command:
+    cmd: >-
+      /usr/local/bin/kubectl -n {{ argocd_namespace }} rollout status
+      deployment/argocd-server --timeout=180s
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+  register: argocd_bootstrap_rollout
+  changed_when: false
+  retries: 3
+  delay: 10
+  until: argocd_bootstrap_rollout.rc == 0
+
+- name: Check whether the initial admin secret still exists
+  ansible.builtin.command:
+    cmd: >-
+      /usr/local/bin/kubectl -n {{ argocd_namespace }} get secret
+      argocd-initial-admin-secret
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+  register: argocd_bootstrap_admin_secret_check
+  changed_when: false
+  failed_when: false
+
+- name: Report Argo CD access instructions
+  ansible.builtin.debug:
+    msg: >-
+      Argo CD installed in namespace '{{ argocd_namespace }}'.
+      {{
+        'Retrieve the initial admin password with: kubectl -n ' ~ argocd_namespace ~
+        ' get secret argocd-initial-admin-secret -o jsonpath=\"{.data.password}\" | base64 -d'
+        if argocd_bootstrap_admin_secret_check.rc == 0
+        else 'Initial admin secret was already removed; admin password has been rotated.'
+      }}
+      Access the UI/API with: kubectl -n {{ argocd_namespace }} port-forward svc/argocd-server 8080:443

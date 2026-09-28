@@ -1,0 +1,16 @@
+---
+# TLS root for the "ingress + cert-manager" decision recorded in
+# docs/decisions/README.md.
+#
+# A self-signed ClusterIssuer is enough to prove the TLS path end to end on
+# the lab cluster (Traefik terminates TLS, cert-manager issues the leaf).
+# Clients must trust the CA manually, so for real trust add a CA-backed or
+# ACME ClusterIssuer in this same directory.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: selfsigned
+  labels:
+    app.kubernetes.io/part-of: platform
+spec:
+  selfSigned: {}

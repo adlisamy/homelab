@@ -1,0 +1,26 @@
+---
+# Gateway served by Traefik's Gateway API provider.
+#
+# Traefik is the Gateway implementation because the traefik Application
+# (platform/gitops/apps/traefik.yaml) enables providers.kubernetesGateway;
+# the GatewayClass "traefik" is created by that same chart.
+#
+# Listener port 8000 matches Traefik's "web" entrypoint declared in the chart's
+# ports section. allowedRoutes is opened to all namespaces so routes living
+# with their workloads in apps/ can attach.
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: traefik-gateway
+  namespace: default
+  labels:
+    app.kubernetes.io/part-of: platform
+spec:
+  gatewayClassName: traefik
+  listeners:
+    - name: web
+      protocol: HTTP
+      port: 8000
+      allowedRoutes:
+        namespaces:
+          from: All

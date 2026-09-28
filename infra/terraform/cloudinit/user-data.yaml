@@ -1,0 +1,52 @@
+#cloud-config
+
+# Hostname de la VM
+hostname: ${hostname}
+fqdn: ${hostname}.local
+manage_etc_hosts: true
+
+# Utilisateur par défaut
+users:
+  - name: ubuntu
+    groups: [adm, sudo, docker, wheel]
+    shell: /bin/bash
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    #lock_passwd: true  # Désactive le mot de passe (SSH key only)
+    # TEMP: allow console password login
+    lock_passwd: true
+    # Replace this with a real hashed password via mkpasswd, example:
+    # mkpasswd -m sha-512 'YourPasswordHere'
+    #passwd: "$6$BJFnbLuGX2FkjtDS$mikz0hijD9Ac5/qBMutmrfoMti2xL7MLUGH7Go0DHIgY0Sd6vqyN40UzmoM.kj/hrpOZYFDer1mt9GYA4pcl80"
+    ssh_authorized_keys:
+      - ${public_key}
+
+# Paquets à installer
+packages:
+  - qemu-guest-agent  # Indispensable pour récupérer l'IP
+  - curl
+  - vim
+  - htop
+  - cloud-guest-utils
+
+# Activer l'agent QEMU au démarrage
+runcmd:
+  - systemctl enable --now qemu-guest-agent
+
+# Autoriser SSH par clé uniquement
+ssh_pwauth: false
+allow_public_ssh_keys: true
+ssh_genkeytypes: [rsa, ecdsa, ed25519]
+
+ssh_authorized_keys:
+  - ${public_key}
+ssh_deletekeys: true
+
+# Mise à jour des paquets au premier boot
+package_update: true
+package_upgrade: false  # Évite les surprises de temps
+
+# Message final
+final_message: |
+  Cloud-init terminé après $UPTIME secondes.
+  Hostname: ${hostname}
+  Connectez-vous avec: ssh ubuntu@<IP>

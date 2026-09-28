@@ -1,0 +1,13 @@
+version: 2
+ethernets:
+  default:
+    match:
+      driver: virtio*   # Match n'importe quelle interface virtio
+    dhcp4: true
+    dhcp6: false
+    # dhcp4-overrides:
+    #   use-dns: true
+    # nameservers:
+    #   addresses:
+    #     - 1.1.1.1
+    #     - 8.8.8.8

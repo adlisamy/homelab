@@ -1,0 +1,42 @@
+---
+# App-of-apps root for the platform.
+#
+# This is the ONLY object that is applied outside Argo CD. Everything the
+# platform needs from here on (CRDs, operators, gateways, ingress) is
+# declared under platform/gitops/apps/ and reconciled by Argo CD from Git.
+# Ansible is no longer involved: see infra/ansible/playbooks/platform-bootstrap.yaml
+# and infra/ansible/roles/argocd_bootstrap/tasks/main.yaml.
+#
+# Bootstrap once, from a host with cluster-admin access:
+#   kubectl apply -f platform/gitops/root-app.yaml
+#
+# PREREQUISITE: replace the repoURL below, and in every file under
+# platform/gitops/apps/, with a Git remote Argo CD can reach. The value is a
+# placeholder because this working copy is not a Git repository yet.
+# See platform/gitops/README.md.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: platform-root
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: platform
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/CHANGE-ME/homelab.git
+    targetRevision: main
+    path: platform/gitops/apps
+    directory:
+      recurse: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ApplyOutOfSyncOnly=true

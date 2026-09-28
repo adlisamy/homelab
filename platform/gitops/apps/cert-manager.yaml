@@ -1,0 +1,47 @@
+---
+# Operator: cert-manager, installed from its upstream Helm chart.
+#
+# The chart repository is public, so no Argo CD repository credentials are
+# needed. The version is pinned here the same way argocd_version is pinned in
+# infra/ansible/inventory/lab/group_vars/all.yaml, so upgrades are a Git change
+# rather than a cluster change.
+#
+# sync-wave 0: the CRDs this operator owns must exist before the
+# platform-security application (ClusterIssuers) is reconciled.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cert-manager
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: platform
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://charts.jetstack.io
+    chart: cert-manager
+    targetRevision: v1.21.2
+    helm:
+      releaseName: cert-manager
+      values: |
+        crds:
+          enabled: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: cert-manager
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      # cert-manager ships large CRDs. Client-side apply stores the whole
+      # object in the last-applied-configuration annotation, which overflows
+      # the 262144-byte annotation limit; the argocd_bootstrap role avoids the
+      # same trap with kubectl --server-side.
+      - ServerSideApply=true
+      - CreateNamespace=true
+      - ApplyOutOfSyncOnly=true

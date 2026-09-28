@@ -1,0 +1,202 @@
+- name: Create K3s configuration directory
+  ansible.builtin.file:
+    path: /etc/rancher/k3s
+    state: directory
+    mode: '0755'
+    owner: root
+    group: root
+
+- name: Check etcd service status to verify endpoint
+  ansible.builtin.systemd:
+    name: etcd
+    state: started
+  register: k3s_server_etcd_service_info
+  changed_when: false
+
+- name: Configure K3s to use external containerd and etcd
+  ansible.builtin.copy:
+    dest: /etc/rancher/k3s/config.yaml
+    mode: '0600'
+    owner: root
+    group: root
+    content: |
+      # Utilisation de etcd externe au lieu de SQLite intégré
+      datastore-endpoint: "http://{{ ansible_default_ipv4.address }}:2379"
+      # Désactivation du containerd embarqué pour utiliser le vôtre
+      container-runtime-endpoint: "unix:///run/containerd/containerd.sock"
+      # Configuration réseau standard (Optionnel)
+      flannel-backend: "none"
+      disable-network-policy: true
+      cluster-cidr: "{{ pods_cidr }}"
+      # The ingress data plane (Traefik) is owned by Argo CD, not by the k3s
+      # traefik addon: see platform/gitops/apps/traefik.yaml. Disabling the
+      # addon here guarantees a single Helm release owns the ingress resources.
+      # This also removes the k3s traefik-crd release. The Traefik Application
+      # reinstalls the traefik.io / hub.traefik.io CRDs from the upstream
+      # chart's crds/ directory, and the gateway-api Application owns the
+      # Gateway API CRDs (which the k3s release marked resource-policy: keep).
+      #
+      # WARNING: once this setting is applied, a k3s-server restart removes
+      # Traefik and ingress stays DOWN until Argo CD syncs the traefik
+      # Application. Do not run this playbook with the addon disabled until
+      # that Application can actually be reconciled.
+      disable:
+        - traefik
+      # Permet de lister l'IP publique/privée du nœud dans le cluster
+      node-ip: "{{ ansible_default_ipv4.address }}"
+      write-kubeconfig-mode: "0640"
+      write-kubeconfig-group: "ubuntu"
+      # Aligner le driver cgroup du kubelet avec containerd (systemd)
+      kubelet-arg: "cgroup-driver=systemd"
+  notify: Restart k3s-server
+
+- name: Create Systemd service file for K3s Server
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/k3s-server.service
+    mode: '0644'
+    owner: root
+    group: root
+    content: |
+      [Unit]
+      Description=Lightweight Kubernetes Control Plane
+      Documentation=https://k3s.io
+      After=network-online.target containerd.service etcd.service
+      Wants=network-online.target
+
+      [Service]
+      Type=notify
+      EnvironmentFile=-/etc/default/%N
+      EnvironmentFile=-/etc/sysconfig/%N
+      EnvironmentFile=-/etc/systemd/system/k3s-server.service.env
+      # Lancement en mode server avec la configuration automatique de /etc/rancher/k3s/config.yaml
+      ExecStart=/usr/local/bin/k3s server
+      KillMode=process
+      Delegate=yes
+      LimitNOFILE=1048576
+      LimitNPROC=infinity
+      LimitCORE=infinity
+      TasksMax=infinity
+      TimeoutStartSec=0
+      Restart=always
+      RestartSec=5
+
+      [Install]
+      WantedBy=multi-user.target
+  notify: Restart k3s-server
+
+- name: Ensure K3s Server service is enabled and started
+  ansible.builtin.service:
+    name: k3s-server
+    state: started
+    enabled: true
+
+- name: Wait for K3s API port 6443 to become available
+  ansible.builtin.wait_for:
+    port: 6443
+    delay: 3
+    timeout: 30
+
+- name: Write read-only worker kubectl RBAC resources
+  ansible.builtin.copy:
+    dest: /etc/rancher/k3s/worker-kubectl-rbac.yaml
+    mode: '0600'
+    content: |
+      apiVersion: v1
+      kind: ServiceAccount
+      metadata:
+        name: worker-kubectl
+        namespace: kube-system
+      ---
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: ClusterRole
+      metadata:
+        name: worker-kubectl-nodes-view
+      rules:
+        - apiGroups: [""]
+          resources: ["nodes", "namespaces"]
+          verbs: ["get", "list", "watch"]
+      ---
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: ClusterRoleBinding
+      metadata:
+        name: worker-kubectl-view
+      roleRef:
+        apiGroup: rbac.authorization.k8s.io
+        kind: ClusterRole
+        name: view
+      subjects:
+        - kind: ServiceAccount
+          name: worker-kubectl
+          namespace: kube-system
+      ---
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: ClusterRoleBinding
+      metadata:
+        name: worker-kubectl-nodes-view
+      roleRef:
+        apiGroup: rbac.authorization.k8s.io
+        kind: ClusterRole
+        name: worker-kubectl-nodes-view
+      subjects:
+        - kind: ServiceAccount
+          name: worker-kubectl
+          namespace: kube-system
+      ---
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: worker-kubectl-token
+        namespace: kube-system
+        annotations:
+          kubernetes.io/service-account.name: worker-kubectl
+      type: kubernetes.io/service-account-token
+
+- name: Apply read-only worker kubectl RBAC resources
+  ansible.builtin.command:
+    cmd: /usr/local/bin/kubectl apply -f /etc/rancher/k3s/worker-kubectl-rbac.yaml
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+  register: k3s_server_worker_kubectl_rbac_apply
+  changed_when: >-
+    k3s_server_worker_kubectl_rbac_apply.stdout_lines |
+    select('search', '(created|configured)$') | list | length > 0
+
+- name: Install Tigera Operator for Calico
+  ansible.builtin.command:
+    cmd: /usr/local/bin/kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/{{ calico_version }}/manifests/tigera-operator.yaml
+  register: k3s_server_calico_operator_apply
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+  changed_when: >-
+    k3s_server_calico_operator_apply.stdout_lines |
+    select('search', '(created|configured)$') | list | length > 0
+
+- name: Write Calico installation custom resource
+  ansible.builtin.copy:
+    dest: /etc/rancher/k3s/calico-installation.yaml
+    mode: '0644'
+    content: |
+      apiVersion: operator.tigera.io/v1
+      kind: Installation
+      metadata:
+        name: default
+      spec:
+        kubernetesProvider: ""
+        cni:
+          type: Calico
+        calicoNetwork:
+          mtu: 1450
+          ipPools:
+            - cidr: "{{ pods_cidr }}"
+              encapsulation: VXLAN
+        flexVolumePath: /var/lib/kubelet/volumeplugins
+
+- name: Trigger Calico installation via Custom Resources
+  ansible.builtin.command:
+    cmd: /usr/local/bin/kubectl apply -f /etc/rancher/k3s/calico-installation.yaml
+  register: k3s_server_calico_installation_apply
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+  changed_when: >-
+    k3s_server_calico_installation_apply.stdout_lines |
+    select('search', '(created|configured)$') | list | length > 0

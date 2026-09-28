@@ -1,0 +1,23 @@
+ansible_python_interpreter: /usr/bin/python3
+
+common_packages:
+  - curl
+  - vim
+  - htop
+  - qemu-guest-agent
+  - jq
+  - net-tools
+
+k3s_preqs_packages:
+  - containerd
+
+etcd_version: "v3.6.13"
+k3s_version: "v1.36.2+k3s1"
+calico_version: "v3.32.1"
+pods_cidr: "10.25.0.0/16"
+service_cidr: ""
+
+timezone: "Europe/Luxembourg"
+
+argocd_namespace: "argocd"
+argocd_version: "v3.5.3"

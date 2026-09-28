@@ -1,0 +1,87 @@
+---
+# Ingress + Gateway API controller, installed by Argo CD from the upstream
+# Traefik Helm chart.
+#
+# The k3s traefik addon is disabled in
+# infra/ansible/roles/k3s_server/tasks/main.yaml so that this is the single
+# Helm release managing the ingress data plane. The k3s traefik-crd release
+# goes away with it: this chart's crds/ directory (traefik.io +
+# hub.traefik.io) is applied by Argo CD, which passes --include-crds by
+# default, while the Gateway API CRDs are owned separately by the gateway-api
+# Application (the chart no longer bundles them).
+#
+# Source is the chart's Git repository rather than a Helm repository index:
+# the chart version is then pinned by Git tag, exactly like argocd_version is
+# pinned in infra/ansible/inventory/lab/group_vars/all.yaml, and the crds/
+# directory is available even if a Helm repo index is unreachable.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: traefik
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: platform
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/traefik/traefik-helm-chart.git
+    # Chart 40.3.0 pins appVersion v3.7.4, the same Traefik release the k3s
+    # addon was running. The chart refuses to render a proxy version above its
+    # own traefik.io/proxy-max-version annotation, so the chart version and the
+    # image tag below have to move together.
+    targetRevision: v40.3.0
+    path: traefik
+    helm:
+      releaseName: traefik
+      values: |
+        # Pinned to the image the k3s addon was already running (and which is
+        # cached on the nodes) instead of the chart default, so the cutover
+        # does not depend on pulling a new image from Docker Hub.
+        image:
+          registry: docker.io
+          repository: rancher/mirrored-library-traefik
+          tag: "3.7.4"
+        providers:
+          kubernetesIngress:
+            publishedService:
+              enabled: true
+          # Opt Traefik into Gateway API alongside Ingress, so one data plane
+          # serves both APIs.
+          kubernetesGateway:
+            enabled: true
+        ingressClass:
+          enabled: true
+          isDefaultClass: true
+          name: traefik
+        # The chart creates the GatewayClass; the Gateway and its routes stay
+        # in Git under apps/gateways/ (gateway.enabled: false).
+        gatewayClass:
+          enabled: true
+          name: traefik
+        gateway:
+          enabled: false
+        priorityClassName: system-cluster-critical
+        tolerations:
+          - key: CriticalAddonsOnly
+            operator: Exists
+          - key: node-role.kubernetes.io/control-plane
+            operator: Exists
+            effect: NoSchedule
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: traefik
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      # Server-side apply mirrors how Argo CD itself and cert-manager are
+      # installed in this repository: it avoids the last-applied-configuration
+      # annotation entirely, which is what makes CRD schema updates reliable.
+      - ServerSideApply=true
+      - CreateNamespace=true
+      - ApplyOutOfSyncOnly=true

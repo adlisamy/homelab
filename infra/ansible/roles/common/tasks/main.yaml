@@ -1,0 +1,51 @@
+- name: Ensure APT cache is up to date
+  ansible.builtin.apt:
+    update_cache: yes
+    cache_valid_time: 3600
+    lock_timeout: 300
+
+- name: Wait for dpkg lock to be released
+  ansible.builtin.command:
+    argv:
+      - fuser
+      - /var/lib/dpkg/lock-frontend
+  register: common_dpkg_lock
+  changed_when: false
+  failed_when: false
+  until: common_dpkg_lock.rc != 0
+  retries: 60
+  delay: 5
+
+- name: Install common packages
+  ansible.builtin.apt:
+    name: "{{ common_packages }}"
+    state: present
+    lock_timeout: 300
+
+- name: Set timezone
+  community.general.timezone:
+    name: "{{ timezone }}"
+  when: timezone is defined
+
+- name: Configure K3s CLI for the SSH user
+  ansible.builtin.blockinfile:
+    path: "/home/{{ ansible_user }}/.profile"
+    create: true
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: '0644'
+    marker: "# {mark} ANSIBLE MANAGED K3S CLI"
+    block: |
+      # The node configuration is root-only; kubectl uses ~/.kube/config instead.
+      export K3S_CONFIG_FILE=/dev/null
+
+# - name: Enable and start qemu-guest-agent if present
+#   ansible.builtin.service:
+#     name: qemu-guest-agent
+#     state: started
+#     enabled: yes
+#   ignore_errors: true
+  
+- name: Debug
+  ansible.builtin.debug:
+    msg: "Init Done"
