@@ -17,6 +17,7 @@ platform/gitops/
   apps/                  # one Argo CD Application per platform area
     gateway-api.yaml     # Gateway API CRDs (cluster-scoped)
     cert-manager.yaml    # operator, from the upstream Helm chart
+    monitoring.yaml      # Prometheus + Grafana, from kube-prometheus-stack
     traefik.yaml         # ingress + Gateway API controller (Helm chart)
     security.yaml        # -> platform/security  (ClusterIssuers / TLS)
     gateways.yaml        # -> apps/gateways      (Gateway / HTTPRoute)
@@ -80,7 +81,7 @@ Apply the root application once, from a host with cluster-admin access:
 kubectl apply -f platform/gitops/root-app.yaml
 ```
 
-Argo CD then creates `gateway-api`, `cert-manager`, `traefik`,
+Argo CD then creates `gateway-api`, `cert-manager`, `monitoring`, `traefik`,
 `platform-security` and `platform-gateways` itself, and keeps them in sync.
 
 ## Verifying without applying
@@ -117,8 +118,26 @@ exact commands.
 ## What is deliberately not here yet
 
 - `platform/observability/`, `platform/storage/`, `platform/rbac/` and
-  `platform/ingress/` are documented platform areas with no manifests yet, so
-  they have no `Application` either (an Application pointing at an empty path
-  fails). Add the directory's manifests and its `Application` together.
+  `platform/ingress/` do not yet contain manifests reconciled from those paths.
+  Monitoring is installed directly from its upstream chart by
+  `apps/monitoring.yaml`; add a path-based `Application` alongside local
+  manifests when a platform area needs them.
 - No Argo CD `ApplicationSet` and no repository credentials: the platform set
   is small enough that explicit Applications are easier to reason about.
+
+## Accessing monitoring
+
+The Prometheus and Grafana Services are kept internal to the cluster. To open
+Grafana locally, use:
+
+```sh
+kubectl -n monitoring port-forward svc/kube-prometheus-stack-grafana 3000:80
+```
+
+Then open `http://localhost:3000`. Grafana's admin password is stored in the
+`kube-prometheus-stack-grafana` Secret in the `monitoring` namespace. Prometheus
+can be reached locally with:
+
+```sh
+kubectl -n monitoring port-forward svc/kube-prometheus-stack-prometheus 9090
+```
